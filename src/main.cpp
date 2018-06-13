@@ -1,6 +1,9 @@
 #include <ros/ros.h>
-#include <geometry_msgs/PoseStamped.h>
+
+#include <geometry_msgs/PoseStamped.h> // CHK
 #include <geometry_msgs/TwistStamped.h>
+#include <geometry_msgs/TransformStamped.h> // CHK
+
 #include <Eigen/Dense>
 #include <string>
 
@@ -36,21 +39,25 @@ PMatrix P_estimate = PMatrix::Zero();
 MVector sigma_Q = MVector::Zero();
 MVector sigma_R = MVector::Zero();
 
-geometry_msgs::PoseStamped pose_old, pose_new;
+geometry_msgs::PoseStamped pose_stamped_pub ; // CHK
+
+geometry_msgs::TransformStamped pose_old, pose_new;
 geometry_msgs::TwistStamped twist, twist_raw;
 
 ros::Subscriber pose_sub;
 ros::Publisher twist_pub, twist_pub_raw;
+ros::Publisher pose_pub;// CHK
 
 ros::WallTime t_old, t_new;
 bool initialized = false;
 
-void pose_cb(const geometry_msgs::PoseStamped::ConstPtr& msg);
+void pose_cb(const geometry_msgs::TransformStamped::ConstPtr& msg); // CHK
+
 void predict(const double &dt);
 FMatrix computeF(const double &dt);
 GMatrix computeG(const double &dt);
 QMatrix computeQ(const GMatrix &G, const MVector &sigma_Q);
-void update(const double &dt, const geometry_msgs::PoseStamped::ConstPtr &msg);
+void update(const double &dt, const geometry_msgs::TransformStamped::ConstPtr &msg);
 RMatrix computeR();
 
 int main(int argc, char **argv)
@@ -68,6 +75,8 @@ int main(int argc, char **argv)
 //////////////////////////////////////////////////////////////////
 //
 	std::string pose_topic, output_topic, outputRaw_topic;
+	std::string pose_pub_topic; // CHK
+
 	ros::init(argc, argv, "vicon_twist");
 	ros::NodeHandle nh(ros::this_node::getName());
 	ros::Duration(3.0).sleep();
@@ -75,16 +84,19 @@ int main(int argc, char **argv)
 	nh.param<std::string>("pose_topic", pose_topic, pose_topic);
 	nh.param<std::string>("output_topic", output_topic, output_topic);
 	nh.param<std::string>("outputRaw_topic", outputRaw_topic, outputRaw_topic);
+	nh.param<std::string>("pose_pub_topic", pose_pub_topic, pose_pub_topic); // CHK
 	ROS_INFO_STREAM("Subscribing pose topic : " << pose_topic);
 	ROS_INFO_STREAM("Output twist topic : " << output_topic);
 	ROS_INFO_STREAM("Output raw twist topic : " << outputRaw_topic);
+	ROS_INFO_STREAM("Output posestamped topic : " << pose_pub_topic);
 
-	pose_sub = nh.subscribe<geometry_msgs::PoseStamped>
+	pose_sub = nh.subscribe<geometry_msgs::TransformStamped>
 								(pose_topic, 10, pose_cb);
 	twist_pub = nh.advertise<geometry_msgs::TwistStamped>
 								(output_topic, 10);
 	twist_pub_raw = nh.advertise<geometry_msgs::TwistStamped>
 								(outputRaw_topic, 10);
+	pose_pub = nh.advertise<geometry_msgs::PoseStamped>(pose_pub_topic, 10);
 
 	ros::Rate rate(1000);
 	while(ros::ok())
@@ -94,7 +106,7 @@ int main(int argc, char **argv)
 	}
 }
 
-void pose_cb(const geometry_msgs::PoseStamped::ConstPtr& msg)
+void pose_cb(const geometry_msgs::TransformStamped::ConstPtr& msg)
 {
 	if(initialized)
 	{
@@ -114,11 +126,24 @@ void pose_cb(const geometry_msgs::PoseStamped::ConstPtr& msg)
 
 			pose_new = *msg;
 			twist_raw.header.stamp = t_now;
-			twist_raw.twist.linear.x = (pose_new.pose.position.x-pose_old.pose.position.x)/dt;
-			twist_raw.twist.linear.y = (pose_new.pose.position.y-pose_old.pose.position.y)/dt;
-			twist_raw.twist.linear.z = (pose_new.pose.position.z-pose_old.pose.position.z)/dt;
+			twist_raw.twist.linear.x = (pose_new.transform.translation.x-pose_old.transform.translation.x)/dt;
+			twist_raw.twist.linear.y = (pose_new.transform.translation.y-pose_old.transform.translation.y)/dt;
+			twist_raw.twist.linear.z = (pose_new.transform.translation.z-pose_old.transform.translation.z)/dt;
 			twist_pub_raw.publish(twist_raw);
+
+
+		pose_stamped_pub.pose.position.x = x_old(0,0); // CHK
+		pose_stamped_pub.pose.position.y = x_old(1,0); // CHK
+		pose_stamped_pub.pose.position.z = x_old(2,0); // CHK
 		
+		pose_stamped_pub.pose.orientation.x = msg->transform.rotation.x; // CHK
+		pose_stamped_pub.pose.orientation.y = msg->transform.rotation.y; // CHK	
+		pose_stamped_pub.pose.orientation.z = msg->transform.rotation.z; // CHK	
+		pose_stamped_pub.pose.orientation.w = msg->transform.rotation.w; // CHK
+
+		
+		pose_pub.publish(pose_stamped_pub);
+
 
 		x_old = x_estimate;
 		P_old = P_estimate;
@@ -128,9 +153,9 @@ void pose_cb(const geometry_msgs::PoseStamped::ConstPtr& msg)
 	else
 	{
 		t_old = ros::WallTime::now();
-		x_old(0,0) = msg->pose.position.x;
-		x_old(1,0) = msg->pose.position.y;
-		x_old(2,0) = msg->pose.position.z;
+		x_old(0,0) = msg->transform.translation.x;
+		x_old(1,0) = msg->transform.translation.y;
+		x_old(2,0) = msg->transform.translation.z;
 
 		P_old(0,0) = 0.1;
 		P_old(1,1) = 0.1;
@@ -154,12 +179,12 @@ void predict(const double &dt)
 	P_predict = F*P_old*F.transpose() + Q;
 }
 
-void update(const double &dt, const geometry_msgs::PoseStamped::ConstPtr& msg)
+void update(const double &dt, const geometry_msgs::TransformStamped::ConstPtr& msg)
 {
 	MVector measure = MVector::Zero();
-	measure(0,0) = msg->pose.position.x;
-	measure(1,0) = msg->pose.position.y;
-	measure(2,0) = msg->pose.position.z;
+	measure(0,0) = msg->transform.translation.x;
+	measure(1,0) = msg->transform.translation.y;
+	measure(2,0) = msg->transform.translation.z;
 
 	MVector residual = measure - H*x_predict;
 	RMatrix R = computeR();
