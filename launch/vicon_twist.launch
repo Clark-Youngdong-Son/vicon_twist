@@ -1,0 +1,14 @@
+<?xml version='1.0'?>
+<launch>
+<arg name="node_name" default="vicon_twist"/>
+<arg name="pose_topic" default="/syd/load_position"/>
+<arg name="output_topic" default="/syd/load_velocity"/>
+<arg name="outputRaw_topic" default="/mavros/mocap/twist_raw"/>
+
+        <node pkg="vicon_twist" type="vicon_twist" name="$(arg node_name)" output="screen">
+			<param name="node_name" type="string" value="$(arg node_name)"/>
+			<param name="pose_topic" type="string" value="$(arg pose_topic)"/>
+			<param name="output_topic" type="string" value="$(arg output_topic)"/>
+			<param name="outputRaw_topic" type="string" value="$(arg outputRaw_topic)"/>
+        </node>
+</launch>
