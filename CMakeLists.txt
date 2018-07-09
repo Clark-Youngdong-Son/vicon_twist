@@ -23,3 +23,6 @@ include_directories(
 
 add_executable(vicon_twist src/main.cpp)
 target_link_libraries (vicon_twist ${catkin_LIBRARIES} ${Eigen_LIBRARIES})
+
+add_executable(vicon_twist_crazy src/main_crazy.cpp)
+target_link_libraries (vicon_twist_crazy ${catkin_LIBRARIES} ${Eigen_LIBRARIES})
